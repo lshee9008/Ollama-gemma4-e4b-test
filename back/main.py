@@ -42,22 +42,14 @@ app.add_middleware(
 
 # ───────────────────────────── 유틸 ─────────────────────────────
 
-def convert_to_wav(input_path: str, output_path: str) -> None:
-    # 오디오 스트림 있는지 먼저 확인
-    probe = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-select_streams", "a",
-         "-show_entries", "stream=codec_type", "-of", "csv=p=0", input_path],
-        capture_output=True, text=True
-    )
-    if "audio" not in probe.stdout:
-        raise RuntimeError("이 파일에는 오디오 스트림이 없습니다. 오디오가 포함된 파일을 올려주세요.")
-
+def convert_to_wav(input_path: str, output_path: str, max_seconds: int = 30) -> None:
     cmd = [
         "ffmpeg", "-y",
         "-i", input_path,
-        "-vn",                        # ← 이거 추가! 비디오 스트림 무시
-        "-ar", str(AUDIO_SAMPLE_RATE),
-        "-ac", str(AUDIO_CHANNELS),
+        "-vn",                          # 비디오 무시
+        "-t", str(max_seconds),         # 최대 30초로 자르기
+        "-ar", str(AUDIO_SAMPLE_RATE),  # 16kHz
+        "-ac", str(AUDIO_CHANNELS),     # mono
         "-c:a", "pcm_s16le",
         output_path,
     ]
@@ -84,7 +76,7 @@ async def stream_ollama(
     payload = {
         "model": model,
         "stream": True,
-        "options": {"num_ctx": 8192},
+        "options": {"num_ctx": 4096},
         "messages": [
             {
                 "role": "user",
@@ -233,9 +225,14 @@ async def transcribe_audio(
         audio_b64 = audio_to_base64(output_path)
 
     async def generate():
-        async for token in stream_ollama(model, prompt, audio_b64):
-            yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
+        try:
+            yield f"data: [분석 시작 — {file.filename} → {model}]\n\n"
+            async for token in stream_ollama(model, prompt, audio_b64):
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         generate(),
