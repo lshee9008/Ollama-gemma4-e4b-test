@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ollama Audio Pipeline</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+      background: #0d0d0f;
+      color: #e2e2e2;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 36px;
+    }
+
+    .card {
+      background: #18181b;
+      border: 1px solid #2a2a2e;
+      border-radius: 16px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 680px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      color: #888;
+      margin-bottom: 6px;
+      margin-top: 16px;
+    }
+    label:first-of-type { margin-top: 0; }
+
+    input[type="text"],
+    input[type="file"],
+    textarea,
+    select {
+      width: 100%;
+      background: #111113;
+      border: 1px solid #2e2e33;
+      border-radius: 8px;
+      color: #e2e2e2;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: #7c5cfc;
+    }
+
+    textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+
+    .drop-zone {
+      border: 2px dashed #2e2e33;
+      border-radius: 10px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      color: #555;
+      font-size: 0.9rem;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #7c5cfc;
+      background: #1c1a2a;
+      color: #aaa;
+    }
+    .drop-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+    .drop-zone.has-file { border-color: #4ade80; color: #4ade80; background: #0f1f14; }
+
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+    .row > * { flex: 1; }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-top: 20px;
+    }
+
+    .btn-analyze {
+      background: #7c5cfc;
+      color: #fff;
+    }
+    .btn-analyze:hover { background: #6a4de0; }
+    .btn-analyze:disabled { background: #3a3a45; color: #666; cursor: not-allowed; }
+
+    .btn-transcribe {
+      background: #1a1a1f;
+      color: #aaa;
+      border: 1px solid #2e2e33;
+      margin-top: 8px;
+    }
+    .btn-transcribe:hover { background: #222228; color: #fff; }
+    .btn-transcribe:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .output-card {
+      background: #0e0e10;
+      border: 1px solid #2a2a2e;
+      border-radius: 16px;
+      padding: 24px 28px;
+      width: 100%;
+      max-width: 680px;
+      min-height: 160px;
+    }
+
+    .output-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .output-header h2 {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+      transition: background 0.3s;
+    }
+    .status-dot.streaming { background: #7c5cfc; animation: pulse 1s infinite; }
+    .status-dot.done      { background: #4ade80; }
+    .status-dot.error     { background: #f87171; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    #output {
+      font-size: 0.92rem;
+      line-height: 1.75;
+      color: #d4d4d4;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #output .meta {
+      font-size: 0.78rem;
+      color: #444;
+      font-style: italic;
+      margin-bottom: 12px;
+    }
+
+    .health-bar {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      font-size: 0.78rem;
+      color: #555;
+    }
+    .health-item {
+      background: #18181b;
+      border: 1px solid #2a2a2e;
+      border-radius: 8px;
+      padding: 8px 14px;
+      flex: 1;
+      text-align: center;
+    }
+    .health-item .val { font-weight: 700; color: #aaa; font-size: 0.85rem; }
+    .health-item .val.ok { color: #4ade80; }
+    .health-item .val.err { color: #f87171; }
+
+    #copy-btn {
+      background: transparent;
+      border: 1px solid #2e2e33;
+      color: #666;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-top: 0;
+      width: auto;
+    }
+    #copy-btn:hover { color: #aaa; border-color: #555; }
+  </style>
+</head>
+<body>
+
+  <h1>🎙 Ollama Audio Pipeline</h1>
+  <p class="subtitle">gemma4:e4b — 오디오 분석 / 전사 데모</p>
+
+  <!-- Health -->
+  <div class="health-bar" id="health-bar">
+    <div class="health-item"><div class="val" id="h-ollama">확인중…</div><div>Ollama</div></div>
+    <div class="health-item"><div class="val" id="h-model">확인중…</div><div>모델 상태</div></div>
+    <div class="health-item"><div class="val" id="h-models">—</div><div>로드된 모델</div></div>
+  </div>
+
+  <!-- Input Card -->
+  <div class="card">
+    <h2>입력</h2>
+
+    <!-- Drop Zone -->
+    <label>오디오 파일 <span style="color:#444">(mp3, wav, m4a, webm, ogg…)</span></label>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="icon">🎵</div>
+      <div id="drop-label">클릭하거나 파일을 드래그하세요</div>
+      <input type="file" id="file-input" accept="audio/*" style="display:none">
+    </div>
+
+    <label>프롬프트</label>
+    <textarea id="prompt">이 오디오를 분석해줘. 무슨 내용인지, 화자의 톤이나 감정, 주요 내용을 한국어로 설명해줘.</textarea>
+
+    <div class="row">
+      <div>
+        <label>모델</label>
+        <input type="text" id="model" value="gemma4:e4b">
+      </div>
+    </div>
+
+    <button class="btn-analyze" id="analyze-btn" disabled onclick="runAnalyze()">🔍 오디오 분석</button>
+    <button class="btn-transcribe" id="transcribe-btn" disabled onclick="runTranscribe()">📝 텍스트 전사만</button>
+  </div>
+
+  <!-- Output -->
+  <div class="output-card">
+    <div class="output-header">
+      <h2>응답</h2>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button id="copy-btn" onclick="copyOutput()" style="display:none">복사</button>
+        <div class="status-dot" id="status-dot"></div>
+      </div>
+    </div>
+    <div id="output"><span style="color:#333">파일을 올리면 여기에 결과가 스트리밍됩니다.</span></div>
+  </div>
+
+<script>
+const API_BASE = window.location.origin;
+let selectedFile = null;
+
+// ── Health Check ──
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API_BASE}/health`);
+    const d = await r.json();
+    document.getElementById('h-ollama').textContent = d.ollama === 'connected' ? '🟢 연결됨' : '🔴 오프라인';
+    document.getElementById('h-ollama').className = 'val ' + (d.ollama === 'connected' ? 'ok' : 'err');
+    document.getElementById('h-model').textContent = d.model_ready ? '🟢 준비됨' : '🟡 없음';
+    document.getElementById('h-model').className = 'val ' + (d.model_ready ? 'ok' : '');
+    document.getElementById('h-models').textContent = (d.available_models || []).join(', ') || '없음';
+  } catch(e) {
+    document.getElementById('h-ollama').textContent = '🔴 서버 오프라인';
+    document.getElementById('h-ollama').className = 'val err';
+  }
+}
+checkHealth();
+
+// ── File Drop ──
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  dropZone.classList.add('has-file');
+  document.getElementById('drop-label').textContent = `✅ ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
+  document.getElementById('analyze-btn').disabled = false;
+  document.getElementById('transcribe-btn').disabled = false;
+}
+
+// ── Core Stream ──
+async function runStream(endpoint, extraFields = {}) {
+  if (!selectedFile) return alert('파일을 먼저 선택해주세요.');
+
+  const dot    = document.getElementById('status-dot');
+  const output = document.getElementById('output');
+  const copyBtn = document.getElementById('copy-btn');
+
+  dot.className = 'status-dot streaming';
+  output.innerHTML = `<span class="meta">📡 ${endpoint} 요청 중…</span>`;
+  copyBtn.style.display = 'none';
+
+  document.getElementById('analyze-btn').disabled = true;
+  document.getElementById('transcribe-btn').disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  fd.append('model', document.getElementById('model').value);
+  if (extraFields.prompt) fd.append('prompt', extraFields.prompt);
+  if (extraFields.language) fd.append('language', extraFields.language);
+
+  try {
+    const resp = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(err);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let isFirst = true;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+        if (data.startsWith('[')) {
+          // 메타 메시지
+          if (isFirst) {
+            output.innerHTML = `<span class="meta">${data}</span>\n\n`;
+            isFirst = false;
+          }
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          const token = parsed.token || '';
+          if (token) {
+            if (isFirst) { output.innerHTML = ''; isFirst = false; }
+            fullText += token;
+            output.textContent = fullText;
+          }
+        } catch {}
+      }
+    }
+
+    dot.className = 'status-dot done';
+    copyBtn.style.display = 'block';
+  } catch(e) {
+    dot.className = 'status-dot error';
+    output.innerHTML = `<span style="color:#f87171">오류: ${e.message}</span>`;
+  } finally {
+    document.getElementById('analyze-btn').disabled = false;
+    document.getElementById('transcribe-btn').disabled = false;
+  }
+}
+
+function runAnalyze() {
+  runStream('/analyze', { prompt: document.getElementById('prompt').value });
+}
+
+function runTranscribe() {
+  runStream('/transcribe', { language: 'Korean' });
+}
+
+function copyOutput() {
+  navigator.clipboard.writeText(document.getElementById('output').textContent);
+  document.getElementById('copy-btn').textContent = '✅ 복사됨';
+  setTimeout(() => document.getElementById('copy-btn').textContent = '복사', 1500);
+}
+</script>
+</body>
+</html>
