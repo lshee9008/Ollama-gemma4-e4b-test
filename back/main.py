@@ -43,15 +43,22 @@ app.add_middleware(
 # ───────────────────────────── 유틸 ─────────────────────────────
 
 def convert_to_wav(input_path: str, output_path: str) -> None:
-    """
-    ffmpeg로 어떤 오디오 포맷이든 gemma4 요구 스펙(16kHz mono WAV)으로 변환
-    """
+    # 오디오 스트림 있는지 먼저 확인
+    probe = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-select_streams", "a",
+         "-show_entries", "stream=codec_type", "-of", "csv=p=0", input_path],
+        capture_output=True, text=True
+    )
+    if "audio" not in probe.stdout:
+        raise RuntimeError("이 파일에는 오디오 스트림이 없습니다. 오디오가 포함된 파일을 올려주세요.")
+
     cmd = [
         "ffmpeg", "-y",
         "-i", input_path,
-        "-ar", str(AUDIO_SAMPLE_RATE),   # 샘플레이트 16kHz
-        "-ac", str(AUDIO_CHANNELS),       # 모노
-        "-c:a", "pcm_s16le",              # 16-bit PCM
+        "-vn",                        # ← 이거 추가! 비디오 스트림 무시
+        "-ar", str(AUDIO_SAMPLE_RATE),
+        "-ac", str(AUDIO_CHANNELS),
+        "-c:a", "pcm_s16le",
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
